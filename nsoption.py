@@ -7,183 +7,145 @@ import yfinance as yf
 
 st.set_page_config(layout="wide")
 
-# -------------------------------
-# Black-Scholes Model
-# -------------------------------
-def black_scholes(S, K, T, r, sigma, option_type):
+# ------------------ STYLING ------------------
+st.markdown("""
+<style>
+body {background-color:#090b0f; color:#e8edf3;}
+.block-container {padding-top:1rem;}
+.header-box {
+    display:flex; justify-content:space-between; align-items:center;
+    background:#0f1318; padding:12px 20px; border-radius:10px;
+    border:1px solid #252d38; margin-bottom:15px;
+}
+.metric-box {
+    background:#161b22; padding:8px 16px; border-radius:6px;
+    border:1px solid #252d38; text-align:right;
+}
+.metric-label {font-size:10px; color:#8a97a8;}
+.metric-value {font-size:16px; font-weight:600;}
+.section {
+    background:#0f1318; border:1px solid #252d38;
+    border-radius:10px; padding:15px; margin-bottom:15px;
+}
+.title {font-weight:700; font-size:14px; margin-bottom:10px;}
+</style>
+""", unsafe_allow_html=True)
+
+# ------------------ BS MODEL ------------------
+def bs_price(S, K, T, r, sigma, t):
     if T <= 0:
-        return max(0, S - K) if option_type == "Call" else max(0, K - S)
+        return max(0, S-K) if t=="Call" else max(0, K-S)
+    d1=(np.log(S/K)+(r+sigma**2/2)*T)/(sigma*np.sqrt(T))
+    d2=d1-sigma*np.sqrt(T)
+    if t=="Call":
+        return S*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d2)
+    return K*np.exp(-r*T)*norm.cdf(-d2)-S*norm.cdf(-d1)
 
-    d1 = (np.log(S / K) + (r + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
+def greeks(S,K,T,r,sigma,t):
+    if T<=0: return [0]*5
+    d1=(np.log(S/K)+(r+sigma**2/2)*T)/(sigma*np.sqrt(T))
+    d2=d1-sigma*np.sqrt(T)
+    delta = norm.cdf(d1) if t=="Call" else norm.cdf(d1)-1
+    gamma = norm.pdf(d1)/(S*sigma*np.sqrt(T))
+    theta = (-S*norm.pdf(d1)*sigma/(2*np.sqrt(T)))/365
+    vega = S*norm.pdf(d1)*np.sqrt(T)/100
+    rho = (K*T*np.exp(-r*T)*norm.cdf(d2 if t=="Call" else -d2))/100
+    return delta,gamma,theta,vega,rho
 
-    if option_type == "Call":
-        price = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-    else:
-        price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+# ------------------ LIVE DATA ------------------
+def fetch_prices():
+    n=yf.Ticker("^NSEI").history(period="1d")["Close"].iloc[-1]
+    s=yf.Ticker("^BSESN").history(period="1d")["Close"].iloc[-1]
+    return n,s
 
-    return price
-
-
-def calculate_greeks(S, K, T, r, sigma, option_type):
-    if T <= 0:
-        return 0, 0, 0, 0, 0
-
-    d1 = (np.log(S / K) + (r + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-
-    delta = norm.cdf(d1) if option_type == "Call" else norm.cdf(d1) - 1
-    gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-    theta = (-S * norm.pdf(d1) * sigma / (2 * np.sqrt(T))) / 365
-    vega = (S * norm.pdf(d1) * np.sqrt(T)) / 100
-    rho = (K * T * np.exp(-r * T) * norm.cdf(d2 if option_type == "Call" else -d2)) / 100
-
-    return delta, gamma, theta, vega, rho
-
-
-# -------------------------------
-# Fetch Live Prices
-# -------------------------------
-def fetch_live_prices():
-    nifty = yf.Ticker("^NSEI")
-    sensex = yf.Ticker("^BSESN")
-
-    nifty_price = nifty.history(period="1d")["Close"].iloc[-1]
-    sensex_price = sensex.history(period="1d")["Close"].iloc[-1]
-
-    return nifty_price, sensex_price
-
-
-# -------------------------------
-# Header Box (Date + Prices)
-# -------------------------------
-def header_box(nifty_price, sensex_price):
-    today = datetime.now().strftime("%d %B %Y")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Date", today)
-    col2.metric("NIFTY", f"{nifty_price:.2f}")
-    col3.metric("SENSEX", f"{sensex_price:.2f}")
-
-
-# -------------------------------
-# Initialize Prices
-# -------------------------------
 if "nifty" not in st.session_state:
-    st.session_state["nifty"] = 22000.0
-if "sensex" not in st.session_state:
-    st.session_state["sensex"] = 73000.0
+    st.session_state.nifty=22000.0
+    st.session_state.sensex=73000.0
 
 if st.button("Fetch Live Prices"):
-    nifty_price, sensex_price = fetch_live_prices()
-    st.session_state["nifty"] = nifty_price
-    st.session_state["sensex"] = sensex_price
+    n,s=fetch_prices()
+    st.session_state.nifty=n
+    st.session_state.sensex=s
 
-nifty_price = st.session_state["nifty"]
-sensex_price = st.session_state["sensex"]
+# ------------------ HEADER ------------------
+today=datetime.now().strftime("%d %b %Y")
+st.markdown(f"""
+<div class="header-box">
+    <div><b>OptionsCraft</b> | {today}</div>
+    <div style="display:flex;gap:10px;">
+        <div class="metric-box">
+            <div class="metric-label">NIFTY</div>
+            <div class="metric-value">{st.session_state.nifty:.2f}</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">SENSEX</div>
+            <div class="metric-value">{st.session_state.sensex:.2f}</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-# -------------------------------
-# Show Header
-# -------------------------------
-header_box(nifty_price, sensex_price)
+# ------------------ MAIN GRID ------------------
+left, right = st.columns([2,1])
 
-st.title("Options Payoff Dashboard (NIFTY & SENSEX)")
+# ------------------ LEFT PANEL ------------------
+with left:
+    st.markdown('<div class="section"><div class="title">Strategy Legs</div>', unsafe_allow_html=True)
 
-# -------------------------------
-# Sidebar Controls
-# -------------------------------
-st.sidebar.header("Market Inputs")
-r = st.sidebar.number_input("Risk-Free Rate (%)", value=6.5) / 100
-iv_adjust = st.sidebar.slider("IV Adjustment (%)", -50, 50, 0) / 100
-time_shift = st.sidebar.slider("Days Forward", 0, 30, 0)
+    legs=[]
+    for i in range(6):
+        cols=st.columns(6)
+        underlying=cols[0].selectbox("Underlying",["NIFTY","SENSEX"],key=f"u{i}")
+        strike=cols[1].number_input("Strike",value=22000.0,key=f"k{i}")
+        premium=cols[2].number_input("Premium",value=100.0,key=f"p{i}")
+        pos=cols[3].selectbox("Pos",["Long","Short"],key=f"pos{i}")
+        typ=cols[4].selectbox("Type",["Call","Put"],key=f"type{i}")
+        exp=cols[5].date_input("Expiry",datetime.today(),key=f"exp{i}")
 
-# -------------------------------
-# Multi-leg Input
-# -------------------------------
-legs = []
-
-st.subheader("Strategy Builder (Max 6 Legs)")
-
-for i in range(6):
-    with st.expander(f"Leg {i+1}"):
-        col1, col2, col3 = st.columns(3)
-
-        underlying = col1.selectbox("Underlying", ["NIFTY", "SENSEX"], key=f"u{i}")
-        strike = col2.number_input("Strike", value=22000 if underlying=="NIFTY" else 73000, key=f"k{i}")
-        premium = col3.number_input("Premium", value=100.0, key=f"p{i}")
-
-        col4, col5, col6 = st.columns(3)
-
-        position = col4.selectbox("Position", ["Long", "Short"], key=f"pos{i}")
-        option_type = col5.selectbox("Type", ["Call", "Put"], key=f"type{i}")
-        expiry = col6.date_input("Expiry", datetime.today(), key=f"exp{i}")
-
-        if strike > 0:
-            legs.append({
-                "underlying": underlying,
-                "strike": strike,
-                "premium": premium,
-                "position": position,
-                "type": option_type,
-                "expiry": expiry
-            })
-
-
-# -------------------------------
-# Payoff Calculation
-# -------------------------------
-def calculate_payoff(legs):
-    pct_range = np.linspace(-0.1, 0.1, 100)
-    total_payoff = np.zeros_like(pct_range)
-    greek_summary = []
-
-    for leg in legs:
-        S_base = nifty_price if leg["underlying"] == "NIFTY" else sensex_price
-        S_range = S_base * (1 + pct_range)
-
-        T_days = (leg["expiry"] - datetime.today().date()).days - time_shift
-        T = max(T_days / 365, 0.0001)
-
-        sigma = 0.2 + iv_adjust
-
-        payoff = []
-
-        for S in S_range:
-            price = black_scholes(S, leg["strike"], T, r, sigma, leg["type"])
-            pnl = price - leg["premium"]
-            if leg["position"] == "Short":
-                pnl = -pnl
-            payoff.append(pnl)
-
-        total_payoff += np.array(payoff)
-
-        greeks = calculate_greeks(S_base, leg["strike"], T, r, sigma, leg["type"])
-        greek_summary.append(greeks)
-
-    return pct_range * 100, total_payoff, greek_summary
-
-
-# -------------------------------
-# Execute
-# -------------------------------
-if st.button("Calculate Payoff"):
-    if len(legs) == 0:
-        st.warning("Add at least one leg.")
-    else:
-        x, payoff, greeks = calculate_payoff(legs)
-
-        df = pd.DataFrame({
-            "Price Change (%)": x,
-            "P&L": payoff
+        legs.append({
+            "u":underlying,"k":strike,"p":premium,
+            "pos":pos,"type":typ,"exp":exp
         })
 
-        st.subheader("Payoff Chart")
-        st.line_chart(df.set_index("Price Change (%)"))
+    calc=st.button("Calculate Payoff")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        st.subheader("Greeks Summary")
-        greek_df = pd.DataFrame(
-            greeks,
-            columns=["Delta", "Gamma", "Theta", "Vega", "Rho"]
-        )
-        st.dataframe(greek_df)
+    if calc:
+        pct=np.linspace(-0.1,0.1,100)
+        total=np.zeros_like(pct)
+        greek_sum=np.zeros(5)
+
+        for l in legs:
+            S=st.session_state.nifty if l["u"]=="NIFTY" else st.session_state.sensex
+            T=max((l["exp"]-datetime.today().date()).days/365,0.0001)
+            sigma=0.2
+
+            curve=[]
+            for p in pct:
+                price=bs_price(S*(1+p),l["k"],T,0.065,sigma,l["type"])
+                pnl=price-l["p"]
+                if l["pos"]=="Short": pnl=-pnl
+                curve.append(pnl)
+            total+=np.array(curve)
+
+            g=np.array(greeks(S,l["k"],T,0.065,sigma,l["type"]))
+            if l["pos"]=="Short": g=-g
+            greek_sum+=g
+
+        df=pd.DataFrame({"% Move":pct*100,"P&L":total})
+
+        st.markdown('<div class="section"><div class="title">Payoff Chart</div>', unsafe_allow_html=True)
+        st.line_chart(df.set_index("% Move"))
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<div class="section"><div class="title">Portfolio Greeks</div>', unsafe_allow_html=True)
+        st.write(pd.DataFrame([greek_sum],columns=["Delta","Gamma","Theta","Vega","Rho"]))
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ------------------ RIGHT PANEL ------------------
+with right:
+    st.markdown('<div class="section"><div class="title">Controls</div>', unsafe_allow_html=True)
+    r=st.slider("Risk Free Rate %",0.0,10.0,6.5)/100
+    iv=st.slider("IV Shift %",-50,50,0)/100
+    time_shift=st.slider("Days Forward",0,60,0)
+    st.markdown("</div>", unsafe_allow_html=True)
