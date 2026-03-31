@@ -94,53 +94,59 @@ with left:
 
     legs=[]
     for i in range(6):
-        cols=st.columns(6)
-        underlying=cols[0].selectbox("Underlying",["NIFTY","SENSEX"],key=f"u{i}")
-        strike=cols[1].number_input("Strike",value=22000.0,key=f"k{i}")
-        premium=cols[2].number_input("Premium",value=100.0,key=f"p{i}")
-        pos=cols[3].selectbox("Pos",["Long","Short"],key=f"pos{i}")
-        typ=cols[4].selectbox("Type",["Call","Put"],key=f"type{i}")
-        exp=cols[5].date_input("Expiry",datetime.today(),key=f"exp{i}")
+        cols=st.columns([0.5,1,1,1,1,1,1])
 
-        legs.append({
-            "u":underlying,"k":strike,"p":premium,
-            "pos":pos,"type":typ,"exp":exp
-        })
+        enabled=cols[0].checkbox("", key=f"enable{i}", value=(i<3))  # default first 3 ON
+        underlying=cols[1].selectbox("Underlying",["NIFTY","SENSEX"],key=f"u{i}")
+        strike=cols[2].number_input("Strike",value=22000.0,key=f"k{i}")
+        premium=cols[3].number_input("Premium",value=100.0,key=f"p{i}")
+        pos=cols[4].selectbox("Pos",["Long","Short"],key=f"pos{i}")
+        typ=cols[5].selectbox("Type",["Call","Put"],key=f"type{i}")
+        exp=cols[6].date_input("Expiry",datetime.today(),key=f"exp{i}")
+
+        if enabled:
+            legs.append({
+                "u":underlying,"k":strike,"p":premium,
+                "pos":pos,"type":typ,"exp":exp
+            })
 
     calc=st.button("Calculate Payoff")
     st.markdown("</div>", unsafe_allow_html=True)
 
     if calc:
-        pct=np.linspace(-0.1,0.1,100)
-        total=np.zeros_like(pct)
-        greek_sum=np.zeros(5)
+        if len(legs)==0:
+            st.warning("Select at least one leg using checkbox")
+        else:
+            pct=np.linspace(-0.1,0.1,100)
+            total=np.zeros_like(pct)
+            greek_sum=np.zeros(5)
 
-        for l in legs:
-            S=st.session_state.nifty if l["u"]=="NIFTY" else st.session_state.sensex
-            T=max((l["exp"]-datetime.today().date()).days/365,0.0001)
-            sigma=0.2
+            for l in legs:
+                S=st.session_state.nifty if l["u"]=="NIFTY" else st.session_state.sensex
+                T=max((l["exp"]-datetime.today().date()).days/365,0.0001)
+                sigma=0.2
 
-            curve=[]
-            for p in pct:
-                price=bs_price(S*(1+p),l["k"],T,0.065,sigma,l["type"])
-                pnl=price-l["p"]
-                if l["pos"]=="Short": pnl=-pnl
-                curve.append(pnl)
-            total+=np.array(curve)
+                curve=[]
+                for p in pct:
+                    price=bs_price(S*(1+p),l["k"],T,0.065,sigma,l["type"])
+                    pnl=price-l["p"]
+                    if l["pos"]=="Short": pnl=-pnl
+                    curve.append(pnl)
+                total+=np.array(curve)
 
-            g=np.array(greeks(S,l["k"],T,0.065,sigma,l["type"]))
-            if l["pos"]=="Short": g=-g
-            greek_sum+=g
+                g=np.array(greeks(S,l["k"],T,0.065,sigma,l["type"]))
+                if l["pos"]=="Short": g=-g
+                greek_sum+=g
 
-        df=pd.DataFrame({"% Move":pct*100,"P&L":total})
+            df=pd.DataFrame({"% Move":pct*100,"P&L":total})
 
-        st.markdown('<div class="section"><div class="title">Payoff Chart</div>', unsafe_allow_html=True)
-        st.line_chart(df.set_index("% Move"))
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('<div class="section"><div class="title">Payoff Chart</div>', unsafe_allow_html=True)
+            st.line_chart(df.set_index("% Move"))
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown('<div class="section"><div class="title">Portfolio Greeks</div>', unsafe_allow_html=True)
-        st.write(pd.DataFrame([greek_sum],columns=["Delta","Gamma","Theta","Vega","Rho"]))
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('<div class="section"><div class="title">Portfolio Greeks</div>', unsafe_allow_html=True)
+            st.write(pd.DataFrame([greek_sum],columns=["Delta","Gamma","Theta","Vega","Rho"]))
+            st.markdown("</div>", unsafe_allow_html=True)
 
 # ------------------ RIGHT PANEL ------------------
 with right:
