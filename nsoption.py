@@ -55,18 +55,44 @@ def fetch_live_prices():
 
 
 # -------------------------------
-# UI Layout
+# Header Box (Date + Prices)
 # -------------------------------
-st.title("Options Payoff Dashboard (NIFTY & SENSEX)")
+def header_box(nifty_price, sensex_price):
+    today = datetime.now().strftime("%d %B %Y")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Date", today)
+    col2.metric("NIFTY", f"{nifty_price:.2f}")
+    col3.metric("SENSEX", f"{sensex_price:.2f}")
+
+
+# -------------------------------
+# Initialize Prices
+# -------------------------------
+if "nifty" not in st.session_state:
+    st.session_state["nifty"] = 22000.0
+if "sensex" not in st.session_state:
+    st.session_state["sensex"] = 73000.0
 
 if st.button("Fetch Live Prices"):
     nifty_price, sensex_price = fetch_live_prices()
     st.session_state["nifty"] = nifty_price
     st.session_state["sensex"] = sensex_price
 
-nifty_price = st.session_state.get("nifty", 22000)
-sensex_price = st.session_state.get("sensex", 73000)
+nifty_price = st.session_state["nifty"]
+sensex_price = st.session_state["sensex"]
 
+# -------------------------------
+# Show Header
+# -------------------------------
+header_box(nifty_price, sensex_price)
+
+st.title("Options Payoff Dashboard (NIFTY & SENSEX)")
+
+# -------------------------------
+# Sidebar Controls
+# -------------------------------
 st.sidebar.header("Market Inputs")
 r = st.sidebar.number_input("Risk-Free Rate (%)", value=6.5) / 100
 iv_adjust = st.sidebar.slider("IV Adjustment (%)", -50, 50, 0) / 100
@@ -102,6 +128,7 @@ for i in range(6):
                 "type": option_type,
                 "expiry": expiry
             })
+
 
 # -------------------------------
 # Payoff Calculation
